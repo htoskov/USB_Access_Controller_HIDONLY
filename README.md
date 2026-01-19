@@ -57,11 +57,11 @@ Because these are **system-wide policies**, Windows will require Administrator a
 - Windows 10 / Windows 11
 - Python 3.10+
 - Required packages:
+```bash
+pip install pywin32 pystray pillow
+```
 
 ## How to run (from project directory)
 ```Powershell
 .\install_autostart.ps1
 ```
-
-```bash
-pip install pywin32 pystray pillow
