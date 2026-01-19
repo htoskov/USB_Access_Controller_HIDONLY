@@ -102,6 +102,9 @@ def add_to_whitelist(instance_id: str) -> None:
 def gpupdate() -> None:
     subprocess.run(["gpupdate", "/force"], check=False)
 
+def restart_device(instance_id: str) -> None:
+    subprocess.run(["pnputil", "/restart-device", instance_id], check=False)
+
 def main() -> None:
     """
     Usage (must be run elevated):
@@ -127,10 +130,13 @@ def main() -> None:
             if len(sys.argv) < 3:
                 print("Missing instance ID")
                 sys.exit(2)
-            add_to_whitelist(sys.argv[2])
+
+            instance_id = sys.argv[2]
+            add_to_whitelist(instance_id)
             apply_lockdown()
             gpupdate()
-            print("Added + reapplied.")
+            restart_device(instance_id)  # <--- ADD THIS
+            print("Added + reapplied + restart attempted.")
         else:
             print("Unknown cmd:", cmd)
             sys.exit(2)

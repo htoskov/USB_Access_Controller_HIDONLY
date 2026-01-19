@@ -10,6 +10,8 @@ import win32api
 import win32event
 import win32con
 import winerror
+import pywintypes
+import win32process
 
 # ---------- Paths ----------
 DESKTOP_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -47,11 +49,38 @@ def load_whitelist():
         log(f"Whitelist load error: {e!r}")
         return set()
 
-def run_helper_elevated(args):
+def run_helper_elevated_wait(args, timeout_ms=30000) -> bool:
     python_exe = sys.executable
     params = f"\"{HELPER}\" " + " ".join(f"\"{a}\"" for a in args)
-    log(f"Running helper elevated: {params}")
-    return win32api.ShellExecute(0, "runas", python_exe, params, None, win32con.SW_HIDE)
+    log(f"Running helper elevated(wait): {params}")
+
+    try:
+        proc_info = win32api.ShellExecuteEx(
+            lpVerb="runas",
+            lpFile=python_exe,
+            lpParameters=params,
+            nShow=win32con.SW_HIDE,
+            fMask=win32con.SEE_MASK_NOCLOSEPROCESS,
+        )
+        hproc = proc_info["hProcess"]
+        rc = win32event.WaitForSingleObject(hproc, timeout_ms)
+        if rc == win32con.WAIT_TIMEOUT:
+            log("Helper timed out waiting for exit.")
+            return False
+
+        exit_code = win32process.GetExitCodeProcess(hproc)
+        log(f"Helper exit code: {exit_code}")
+        return exit_code == 0
+
+    except pywintypes.error as e:
+        log(f"ShellExecuteEx error: {e!r}")
+
+        if getattr(e, "winerror", None) in (winerror.ERROR_CANCELLED, 1223):
+            log("UAC canceled by user.")
+            return False
+
+        log("Elevation failed for other reason.")
+        return False
 
 def snapshot_hid_like():
     """
@@ -156,6 +185,10 @@ def prompt_whitelist(pnp_id: str):
     btn_row = tk.Frame(card, bg=CARD, pady=12)
     btn_row.pack(fill="x")
 
+    def on_cancel():
+        result["ok"] = False
+        root.destroy()
+
     def style_button(btn: tk.Button):
         btn.configure(
             bg=BTN_BG,
@@ -175,11 +208,17 @@ def prompt_whitelist(pnp_id: str):
             status.config(text="Wrong password.")
             root.bell()
             return
-        result["ok"] = True
-        root.destroy()
 
-    def on_cancel():
-        result["ok"] = False
+        status.config(text="Requesting admin approval (UAC)...")
+        root.update_idletasks()
+
+        ok = run_helper_elevated_wait(["add", pnp_id])
+        if not ok:
+            status.config(text="Admin prompt was canceled (or failed). Device is still blocked. Click OK to retry.")
+            root.bell()
+            return
+
+        result["ok"] = True
         root.destroy()
 
     cancel_btn = tk.Button(btn_row, text="Cancel", command=on_cancel)
@@ -234,8 +273,7 @@ def main():
             if dev in wl:
                 log(f"Already whitelisted: {dev}")
                 continue
-            if prompt_whitelist(dev):
-                run_helper_elevated(["add", dev])
+            prompt_whitelist(dev)
 
         last = cur
 

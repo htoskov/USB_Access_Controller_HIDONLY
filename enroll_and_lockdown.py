@@ -2,15 +2,24 @@ import sys
 import wmi
 import win32api
 import win32con
-
+import pywintypes
+import winerror
 import os
 
 HELPER = os.path.join(os.path.dirname(__file__), "hid_guard_helper.py")
 
-def run_helper_elevated(args):
+def run_helper_elevated(args) -> bool:
     python_exe = sys.executable
     params = f"\"{HELPER}\" " + " ".join(f"\"{a}\"" for a in args)
-    return win32api.ShellExecute(0, "runas", python_exe, params, None, win32con.SW_SHOWNORMAL)
+
+    try:
+        rc = win32api.ShellExecute(0, "runas", python_exe, params, None, win32con.SW_HIDE)
+        return rc > 32
+    except pywintypes.error as e:
+        if getattr(e, "winerror", None) in (winerror.ERROR_CANCELLED, 1223):
+            return False
+        return False
+
 
 def collect_present_input_like_devices():
     """
